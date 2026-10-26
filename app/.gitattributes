@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Script di shell sempre con LF: un entrypoint con CRLF non parte nel container Linux
+*.sh text eol=lf

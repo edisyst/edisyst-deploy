@@ -1,0 +1,127 @@
+# Risorsa Docker Compose del progetto applicativo in Coolify.
+# Quattro servizi, una sola immagine per app, worker e scheduler: cambia solo il comando.
+# Le variabili ${...:?} si impostano in Coolify (vedi .env.example): se una manca
+# il deploy si ferma invece di avviare il container con un valore vuoto.
+
+services:
+
+  # Applicazione web: Coolify la espone sul dominio tramite il suo proxy (Traefik)
+  app:
+    image: ghcr.io/owner/my-app:demo
+    restart: unless-stopped
+    environment:
+      RUN_MIGRATIONS: "true"
+      APP_ENV: demo
+      APP_DEBUG: "false"
+      APP_URL: https://app.example.com
+      APP_KEY: ${APP_KEY:?}
+      DB_CONNECTION: mysql
+      DB_HOST: ${DB_HOST:?}
+      DB_PORT: "3306"
+      DB_DATABASE: my_app
+      DB_USERNAME: my_app
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      REDIS_HOST: ${REDIS_HOST:?}
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      SESSION_SECURE_COOKIE: "true"
+      QUEUE_CONNECTION: redis
+      MAIL_MAILER: log
+    volumes:
+      - app-storage:/app/storage/app
+    depends_on:
+      redis:
+        condition: service_started
+    healthcheck:
+
+      # Usa PHP, sempre presente nell'immagine, invece di curl che potrebbe mancare
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://localhost/up') === false ? 1 : 0);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - coolify
+
+  # Esegue i job in coda
+  worker:
+    image: ghcr.io/owner/my-app:demo
+    restart: unless-stopped
+    command: php artisan queue:work redis --queue=default --tries=3 --max-time=3600 --sleep=3
+    environment:
+      RUN_MIGRATIONS: "false"
+      APP_ENV: demo
+      APP_DEBUG: "false"
+      APP_URL: https://app.example.com
+      APP_KEY: ${APP_KEY:?}
+      DB_CONNECTION: mysql
+      DB_HOST: ${DB_HOST:?}
+      DB_PORT: "3306"
+      DB_DATABASE: my_app
+      DB_USERNAME: my_app
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      REDIS_HOST: ${REDIS_HOST:?}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      MAIL_MAILER: log
+    volumes:
+      - app-storage:/app/storage/app
+    depends_on:
+      # Parte solo quando app è healthy, cioè a migration concluse
+      app:
+        condition: service_healthy
+    healthcheck:
+
+      # Non serve un controllo HTTP: il worker non risponde a richieste web
+      disable: true
+    networks:
+      - coolify
+
+  # Esegue le attività pianificate
+  scheduler:
+    image: ghcr.io/owner/my-app:demo
+    restart: unless-stopped
+    command: php artisan schedule:work
+    environment:
+      RUN_MIGRATIONS: "false"
+      APP_ENV: demo
+      APP_DEBUG: "false"
+      APP_URL: https://app.example.com
+      APP_KEY: ${APP_KEY:?}
+      DB_CONNECTION: mysql
+      DB_HOST: ${DB_HOST:?}
+      DB_PORT: "3306"
+      DB_DATABASE: my_app
+      DB_USERNAME: my_app
+      DB_PASSWORD: ${DB_PASSWORD:?}
+      REDIS_HOST: ${REDIS_HOST:?}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      MAIL_MAILER: log
+    volumes:
+      - app-storage:/app/storage/app
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks:
+      - coolify
+
+  # Cache, sessioni e code: ambiente demo, nessuna persistenza su disco
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
+  app-storage:
+
+# Rete creata da Coolify all'installazione: esiste già, il compose la usa soltanto.
+# Serve a raggiungere il MySQL condiviso del progetto infra
+networks:
+  coolify:
+    external: true
