@@ -28,6 +28,8 @@ flowchart LR
     utente(["utente"]) --> cf["Cloudflare"] --> tunnel
 ```
 
+Se il grafo non viene visualizzato, [apri la versione immagine](docs/deploy-flow.png).
+
 Un push sul branch `demo` avvia la pipeline GitHub Actions ([`app/.github/workflows/deploy.yml`](app/.github/workflows/deploy.yml)), fatta di tre job in sequenza. `quality` ripete i controlli della CI: test Pest su MySQL e Redis veri, analisi statica con PHPStan, stile del codice con Pint. `build` costruisce l'immagine Docker e la pubblica su GitHub Container Registry. `deploy` chiama il webhook di Coolify. Se un job fallisce i successivi non partono, quindi online finisce solo codice che ha superato tutti i controlli.
 
 In Coolify l'auto-deploy è spento: il rilascio parte solo dalla pipeline. Il server non builda nulla, scarica l'immagine già pronta e ricrea i servizi.
